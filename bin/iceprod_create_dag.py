@@ -123,7 +123,10 @@ if __name__ == "__main__":
     
     parser.add_argument('-x', dest='x509', default='/tmp/x509up_u{}'.format(pwd.getpwnam(getpass.getuser()).pw_uid), help='x509 proxy path')
     parser.add_argument('-e', dest='loader', default=expandvars('$ICEPRODROOT/bin/loader.sh'), help='path to iceprod loader script')
-    parser.add_argument('--jobs', type=int, default=None)
+    parser.add_argument('--jobs', type=int, help="Number of jobs to schedule", default=None)
+    parser.add_argument('--run-only', nargs='+', type=int, help="Only run these job indices. If omitted, run all jobs.", default=None)
+    parser.add_argument('--retry', type=int, help="Number of times to retry failed jobs", default=1)
+    parser.add_argument('--blacklist', type=str, nargs='+', help="Glidein sites to exclude", default=None)
     parser.add_argument('cfgfile', help='path to iceprod dataset configuration file')
     opts = parser.parse_args()
     
@@ -147,6 +150,12 @@ if __name__ == "__main__":
         p('transfer_output_files = iceprod_log, iceprod_out, iceprod_err')
         p('log = {}.log'.format(cfg.config['dataset']))
         p('+FileSystemDomain=lalaland')
+        requirements = ['(TARGET.ICECUBE_CVMFS_Exists)']
+        if opts.blacklist is not None:
+            blacklist = ",".join(['"{}"'.format(s) for s in opts.blacklist])
+            p("+blacklist={"+blacklist+"}")
+            requirements.append("(!member(TARGET.GLIDEIN_Site, MY.blacklist))")
+        p("requirements = {}".format('&&'.join(requirements)))
         p('queue')
     logging.info("Wrote submit file: {}".format(subfile))
     if not isdir('logs'):
@@ -167,6 +176,8 @@ if __name__ == "__main__":
         if opts.jobs is not None:
             maxjobs = min((maxjobs, opts.jobs))
         for job in range(maxjobs):
+            if opts.run_only is not None and not job in opts.run_only:
+                continue
             cfg.config['options']['job'] = job
         
             label = label_for_task(job, task['name'])
